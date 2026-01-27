@@ -14,24 +14,25 @@ import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.Commands;
 import edu.wpi.first.wpilibj2.command.button.CommandXboxController;
 import edu.wpi.first.wpilibj2.command.button.RobotModeTriggers;
-import edu.wpi.first.wpilibj2.command.sysid.SysIdRoutine.Direction;
-import edu.wpi.first.math.MathUtil;
-
 
 import frc.robot.generated.TunerConstants;
 import frc.robot.subsystems.CommandSwerveDrivetrain;
 
 public class RobotContainer {
-    public double hedef = 0.0;
-    public boolean basildi = false;
-    public double hiz = 0.0;
     private double MaxSpeed = 1.0 * TunerConstants.kSpeedAt12Volts.in(MetersPerSecond); // kSpeedAt12Volts desired top speed
     private double MaxAngularRate = RotationsPerSecond.of(0.75).in(RadiansPerSecond); // 3/4 of a rotation per second max angular velocity
+
+    private boolean snap = false; // snaps to 45 degree angles
 
     /* Setting up bindings for necessary control of the swerve drive platform */
     private final SwerveRequest.FieldCentric drive = new SwerveRequest.FieldCentric()
             .withDeadband(MaxSpeed * 0.1).withRotationalDeadband(MaxAngularRate * 0.1) // Add a 10% deadband
             .withDriveRequestType(DriveRequestType.OpenLoopVoltage); // Use open-loop control for drive motors
+
+    private final SwerveRequest.FieldCentricFacingAngle driveFacing = new SwerveRequest.FieldCentricFacingAngle()
+            .withDeadband(MaxSpeed * 0.1).withRotationalDeadband(MaxAngularRate * 0.1)
+            .withDriveRequestType(DriveRequestType.OpenLoopVoltage).withMaxAbsRotationalRate(MaxAngularRate);
+
     private final SwerveRequest.SwerveDriveBrake brake = new SwerveRequest.SwerveDriveBrake();
     private final SwerveRequest.PointWheelsAt point = new SwerveRequest.PointWheelsAt();
 
@@ -46,82 +47,72 @@ public class RobotContainer {
     }
 
     private void configureBindings() {
-        final var idle = new SwerveRequest.Idle();
-        RobotModeTriggers.disabled().whileTrue(
-            drivetrain.applyRequest(() -> idle).ignoringDisable(true)
+        // Note that X is defined as forward according to WPILib convention,
+        // and Y is defined as to the left according to WPILib convention.
+        drivetrain.setDefaultCommand(
+                // Drivetrain will execute this command periodically
+                drivetrain.applyRequest(() -> {
+                            var x = joystick.getRightX();
+                            var y = joystick.getRightY();
+                            if(Math.abs(x) > 0.4 || Math.abs(y) > 0.4) {
+                                var rotation = new Rotation2d(-y, -x);
+                                if(snap) rotation = new Rotation2d(Math.toRadians(Math.round(rotation.getDegrees() / 45.0) * 45));
+                                return driveFacing.withVelocityX(-joystick.getLeftY() * MaxSpeed)
+                                        .withVelocityY(-joystick.getLeftX() * MaxSpeed)
+                                        .withTargetDirection(rotation);
+                            } else {
+                                return drive.withVelocityX(-joystick.getLeftY() * MaxSpeed)
+                                        .withVelocityY(-joystick.getLeftX() * MaxSpeed)
+                                        .withRotationalRate(0);
+                            }
+                        }
+                )
         );
 
-        joystick.y().onTrue(Commands.runOnce(() -> 
-        {
-            hedef = 0.0;
-            basildi = true;
-        }));
-        joystick.a().onTrue(Commands.runOnce(() ->
-        {
-            hedef = Math.PI;
-            basildi = true;
-        }));
-        joystick.x().onTrue(Commands.runOnce(() ->
-        {
-            hedef = -Math.PI/2;
-            basildi = true;
-        }));
-        joystick.b().onTrue(Commands.runOnce(() ->
-        {
-            hedef = Math.PI/2;
-            basildi = true;
-        }));
-         drivetrain.setDefaultCommand(
-			drivetrain.applyRequest(() -> 
-            {
-                if(Math.abs(joystick.getRightX()) > 0.1) 
-                {
-                    basildi = false;
-                }   
-                if(basildi)
-                {
-                    double hata = Rotation2d.fromRadians(hedef)
-	                                        .minus(drivetrain.getState().Pose.getRotation())
-	                                        .getRadians();
-                    hata = Math.atan2(Math.sin(hata), Math.cos(hata));
-                    if(Math.abs(hata) < Math.toRadians(3))
-                    {
-                        basildi = false;
-                        hiz = 0;
-                    }
-                    else
-                    {
-                        	hiz = hata * 3;
-	                        hiz = MathUtil.clamp(hiz, -MaxAngularRate, MaxAngularRate);
-                    }
-                }
-                else
-                {
-                    hiz = -joystick.getRightX() * MaxAngularRate;
-                }
-                return drive.withVelocityX(-joystick.getLeftY() * MaxSpeed)
-					.withVelocityY(-joystick.getLeftX() * MaxSpeed)
-					.withRotationalRate(hiz);
-            }));
-        joystick.leftBumper().onTrue(drivetrain.runOnce(drivetrain::seedFieldCentric));
+        // Idle while the robot is disabled. This ensures the configured
+        // neutral mode is applied to the drive motors while disabled.
+        final var idle = new SwerveRequest.Idle();
+        RobotModeTriggers.disabled().whileTrue(
+                drivetrain.applyRequest(() -> idle).ignoringDisable(true)
+        );
+
+        joystick.a().whileTrue(drivetrain.applyRequest(() -> brake));
+        joystick.b().whileTrue(drivetrain.applyRequest(() ->
+                point.withModuleDirection(new Rotation2d(-joystick.getLeftY(), -joystick.getLeftX()))
+        ));
+
+        joystick.rightStick().onTrue(Commands.runOnce(() -> snap = !snap));
+
+        // Run SysId routines when holding back/start and X/Y.
+        // Note that each routine should be run exactly once in a single log.
+        // joystick.back().and(joystick.y()).whileTrue(drivetrain.sysIdDynamic(Direction.kForward));
+        // joystick.back().and(joystick.x()).whileTrue(drivetrain.sysIdDynamic(Direction.kReverse));
+        // joystick.start().and(joystick.y()).whileTrue(drivetrain.sysIdQuasistatic(Direction.kForward));
+        // joystick.start().and(joystick.x()).whileTrue(drivetrain.sysIdQuasistatic(Direction.kReverse));
+
+        // Reset the field-centric heading on left bumper press.
+        // joystick.leftBumper().onTrue(drivetrain.runOnce(drivetrain::seedFieldCentric));
+
         drivetrain.registerTelemetry(logger::telemeterize);
     }
+
     public Command getAutonomousCommand() {
         // Simple drive forward auton
         final var idle = new SwerveRequest.Idle();
         return Commands.sequence(
-            // Reset our field centric heading to match the robot
-            // facing away from our alliance station wall (0 deg).
-            drivetrain.runOnce(() -> drivetrain.seedFieldCentric(Rotation2d.kZero)),
-            // Then slowly drive forward (away from us) for 5 seconds.
-            drivetrain.applyRequest(() ->
-                drive.withVelocityX(0.5)
-                    .withVelocityY(0)
-                    .withRotationalRate(0)
-            )
-            .withTimeout(5.0),
-            // Finally idle for the rest of auton
-            drivetrain.applyRequest(() -> idle)
+                // Reset our field centric heading to match the robot
+                // facing away from our alliance station wall (0 deg).
+                drivetrain.runOnce(() -> drivetrain.seedFieldCentric(Rotation2d.kZero)),
+                // Then slowly drive forward (away from us) for 5 seconds.
+                drivetrain.applyRequest(() ->
+                                drive.withVelocityX(0.5)
+                                        .withVelocityY(0)
+                                        .withRotationalRate(0)
+                        )
+                        .withTimeout(5.0),
+                // Finally idle for the rest of auton
+                drivetrain.applyRequest(() -> idle)
         );
     }
+
 }
