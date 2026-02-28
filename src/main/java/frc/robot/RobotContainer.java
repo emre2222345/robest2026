@@ -13,18 +13,29 @@ import com.ctre.phoenix6.swerve.SwerveRequest;
 import com.revrobotics.spark.SparkLowLevel;
 import com.revrobotics.spark.SparkMax;
 import edu.wpi.first.math.geometry.Rotation2d;
+import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.Commands;
+import edu.wpi.first.wpilibj2.command.RunCommand;
 import edu.wpi.first.wpilibj2.command.button.CommandXboxController;
 import edu.wpi.first.wpilibj2.command.button.RobotModeTriggers;
-
 
 import frc.robot.generated.TunerConstants;
 import frc.robot.subsystems.CommandSwerveDrivetrain;
 
+import com.revrobotics.spark.config.SparkMaxConfig;
+import com.revrobotics.spark.config.ClosedLoopConfig;
+import com.revrobotics.spark.SparkBase.ResetMode;
+import com.revrobotics.spark.SparkBase.ControlType;
+import com.revrobotics.spark.SparkBase.PersistMode;
+
 public class RobotContainer {
     public boolean intakeStatus = false;
+    public boolean shooterStatus = false;
     private SparkMax intakeMotor  = new SparkMax(30, SparkLowLevel.MotorType.kBrushless);
+    private SparkMax shooterMotor1  = new SparkMax(31, SparkLowLevel.MotorType.kBrushless);
+    private SparkMax shooterMotor2  = new SparkMax(32, SparkLowLevel.MotorType.kBrushless);
+    private SparkMaxConfig shooterConfig = new SparkMaxConfig();
 
     private double MaxSpeed = 1.0 * TunerConstants.kSpeedAt12Volts.in(MetersPerSecond); // kSpeedAt12Volts desired top speed
     private double MaxAngularRate = RotationsPerSecond.of(0.75).in(RadiansPerSecond); // 3/4 of a rotation per second max angular velocity
@@ -50,6 +61,20 @@ public class RobotContainer {
     public final CommandSwerveDrivetrain drivetrain = TunerConstants.createDrivetrain();
 
     public RobotContainer() {
+        ClosedLoopConfig pid = shooterConfig.closedLoop;
+        pid.p(0.0001);
+        pid.i(0);
+        pid.d(0.00001);
+        pid.velocityFF(0.00017);
+
+        shooterConfig.smartCurrentLimit(35);
+
+        shooterConfig.inverted(false);
+        shooterMotor1.configure(shooterConfig, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
+
+        shooterConfig.inverted(true);
+        shooterMotor2.configure(shooterConfig, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
+
         configureBindings();
     }
 
@@ -90,13 +115,28 @@ public class RobotContainer {
         joystick.y().onTrue(Commands.runOnce(() -> {
             if (intakeStatus) {
                 intakeStatus = false;
-                intakeMotor.set(0.0);;
+                intakeMotor.set(0.0);
             } else {
                 intakeStatus = true;
                 intakeMotor.set(1.0);
             }
         }));
 
+        joystick.x().onTrue(Commands.runOnce(() -> {
+        if (shooterStatus) {
+            shooterStatus = false;
+            shooterMotor1.getClosedLoopController().setSetpoint(0, SparkMax.ControlType.kVelocity);
+            shooterMotor2.getClosedLoopController().setSetpoint(0, SparkMax.ControlType.kVelocity);
+        } else {
+            shooterStatus = true;
+            double targetRPM = 4050; 
+            shooterMotor1.getClosedLoopController().setReference(targetRPM, ControlType.kVelocity);
+            shooterMotor2.getClosedLoopController().setReference(targetRPM, ControlType.kVelocity);
+        }
+        }));
+
+        joystick.povUp().onTrue(new RunCommand(()->SmartDashboard.putNumber("Shooter1Rpm", shooterMotor1.getEncoder().getVelocity())));
+        
         joystick.rightStick().onTrue(Commands.runOnce(() -> snap = !snap));
 
         // Run SysId routines when holding back/start and X/Y.
