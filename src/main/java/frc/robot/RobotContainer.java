@@ -29,6 +29,12 @@ import com.revrobotics.spark.SparkBase.ResetMode;
 import com.revrobotics.spark.SparkBase.ControlType;
 import com.revrobotics.spark.SparkBase.PersistMode;
 
+import com.pathplanner.lib.path.PathPlannerPath;
+import com.pathplanner.lib.auto.AutoBuilder;
+import com.pathplanner.lib.path.PathConstraints;
+import edu.wpi.first.wpilibj2.command.SequentialCommandGroup;
+
+
 public class RobotContainer {
     public boolean intakeStatus = false;
     public boolean shooterStatus = false;
@@ -153,22 +159,18 @@ public class RobotContainer {
     }
 
     public Command getAutonomousCommand() {
-        // Simple drive forward auton
-        final var idle = new SwerveRequest.Idle();
-        return Commands.sequence(
-                // Reset our field centric heading to match the robot
-                // facing away from our alliance station wall (0 deg).
-                drivetrain.runOnce(() -> drivetrain.seedFieldCentric(Rotation2d.kZero)),
-                // Then slowly drive forward (away from us) for 5 seconds.
-                drivetrain.applyRequest(() ->
-                                drive.withVelocityX(0.5)
-                                        .withVelocityY(0)
-                                        .withRotationalRate(0)
-                        )
-                        .withTimeout(5.0),
-                // Finally idle for the rest of auton
-                drivetrain.applyRequest(() -> idle)
+    Command seedHeading = drivetrain.runOnce(() -> drivetrain.seedFieldCentric(new Rotation2d()));
+    try {
+        PathPlannerPath path = PathPlannerPath.fromPathFile("Example Path");
+        Command pathCommand = AutoBuilder.followPath(path);
+        return new SequentialCommandGroup(
+            seedHeading,
+            pathCommand
         );
+    } catch (Exception e) {
+        return seedHeading;
     }
+}
+
 
 }
