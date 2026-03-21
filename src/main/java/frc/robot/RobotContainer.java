@@ -12,6 +12,8 @@ import com.ctre.phoenix6.swerve.SwerveRequest;
 
 import com.revrobotics.spark.SparkLowLevel;
 import com.revrobotics.spark.SparkMax;
+
+import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.Command;
@@ -22,6 +24,7 @@ import edu.wpi.first.wpilibj2.command.button.RobotModeTriggers;
 
 import frc.robot.generated.TunerConstants;
 import frc.robot.subsystems.CommandSwerveDrivetrain;
+import pabeles.concurrency.IntOperatorTask.Max;
 
 import com.revrobotics.spark.config.SparkMaxConfig;
 import com.revrobotics.spark.config.ClosedLoopConfig;
@@ -41,9 +44,16 @@ public class RobotContainer {
     private SparkMax intakeMotor  = new SparkMax(30, SparkLowLevel.MotorType.kBrushless);
     private SparkMax shooterMotor1  = new SparkMax(31, SparkLowLevel.MotorType.kBrushless);
     private SparkMax shooterMotor2  = new SparkMax(32, SparkLowLevel.MotorType.kBrushless);
+    private SparkMax shooterMotor3  = new SparkMax(33, SparkLowLevel.MotorType.kBrushless);
+    private SparkMax shooterMotor4  = new SparkMax(34, SparkLowLevel.MotorType.kBrushless);
     private SparkMaxConfig shooterConfig = new SparkMaxConfig();
 
-    private double MaxSpeed = 1.0 * TunerConstants.kSpeedAt12Volts.in(MetersPerSecond); // kSpeedAt12Volts desired top speed
+    private final double kP_Translation = 1.5; 
+    private final double kP_Rotation = 1.5;
+    private Pose2d kTargetPose = new Pose2d(0.0, 0.0, Rotation2d.fromDegrees(0));
+    private boolean drivingToPose = false;
+
+    private double MaxSpeed = 0.2 * TunerConstants.kSpeedAt12Volts.in(MetersPerSecond); // kSpeedAt12Volts desired top speed
     private double MaxAngularRate = RotationsPerSecond.of(0.75).in(RadiansPerSecond); // 3/4 of a rotation per second max angular velocity
 
     private boolean snap = false; // snaps to 45 degree angles
@@ -68,18 +78,20 @@ public class RobotContainer {
 
     public RobotContainer() {
         ClosedLoopConfig pid = shooterConfig.closedLoop;
-        pid.p(0.0001);
+        pid.p(0.00032);
         pid.i(0);
-        pid.d(0.00001);
+        pid.d(0.000032);
         pid.velocityFF(0.00017);
 
         shooterConfig.smartCurrentLimit(35);
 
-        shooterConfig.inverted(false);
-        shooterMotor1.configure(shooterConfig, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
-
         shooterConfig.inverted(true);
+        shooterMotor1.configure(shooterConfig, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
+        shooterMotor4.configure(shooterConfig, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
+
+        shooterConfig.inverted(false);
         shooterMotor2.configure(shooterConfig, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
+        shooterMotor3.configure(shooterConfig, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
 
         configureBindings();
     }
@@ -87,24 +99,23 @@ public class RobotContainer {
     private void configureBindings() {
         // Note that X is defined as forward according to WPILib convention,
         // and Y is defined as to the left according to WPILib convention.
-        drivetrain.setDefaultCommand(
-                // Drivetrain will execute this command periodically
+            drivetrain.setDefaultCommand(
                 drivetrain.applyRequest(() -> {
-                            var x = joystick.getRightX();
-                            var y = joystick.getRightY();
-                            if(Math.abs(x) > 0.4 || Math.abs(y) > 0.4) {
-                                var rotation = new Rotation2d(-y, -x);
-                                if(snap) rotation = new Rotation2d(Math.toRadians(Math.round(rotation.getDegrees() / 45.0) * 45));
-                                return driveFacing.withVelocityX(-joystick.getLeftY() * MaxSpeed)
-                                        .withVelocityY(-joystick.getLeftX() * MaxSpeed)
-                                        .withTargetDirection(rotation);
-                            } else {
-                                return drive.withVelocityX(-joystick.getLeftY() * MaxSpeed)
-                                        .withVelocityY(-joystick.getLeftX() * MaxSpeed)
-                                        .withRotationalRate(0);
-                            }
-                        }
-                )
+                    var x = joystick.getRightX();
+                    var y = joystick.getRightY();
+                    if(Math.abs(x) > 0.4 || Math.abs(y) > 0.4) {
+                        var rotation = new Rotation2d(-y, -x);
+                        if(snap) rotation = new Rotation2d(Math.toRadians(Math.round(rotation.getDegrees() / 45.0) * 45));
+                        return driveFacing.withVelocityX(-joystick.getLeftY() * MaxSpeed)
+                                .withVelocityY(-joystick.getLeftX() * MaxSpeed)
+                                .withTargetDirection(rotation);
+                    } else {
+                        return drive.withVelocityX(-joystick.getLeftY() * MaxSpeed)
+                                .withVelocityY(-joystick.getLeftX() * MaxSpeed)
+                                .withRotationalRate(0);
+                    }
+                }
+            ).unless(() -> drivingToPose)
         );
 
         // Idle while the robot is disabled. This ensures the configured
@@ -131,18 +142,30 @@ public class RobotContainer {
         joystick.x().onTrue(Commands.runOnce(() -> {
         if (shooterStatus) {
             shooterStatus = false;
-            shooterMotor1.getClosedLoopController().setSetpoint(0, SparkMax.ControlType.kVelocity);
-            shooterMotor2.getClosedLoopController().setSetpoint(0, SparkMax.ControlType.kVelocity);
+            shooterMotor1.getClosedLoopController().setReference(0, ControlType.kVelocity);
+            shooterMotor2.getClosedLoopController().setReference(0, ControlType.kVelocity);
+            shooterMotor3.getClosedLoopController().setReference(0, ControlType.kVelocity);
+            shooterMotor4.getClosedLoopController().setReference(0, ControlType.kVelocity);
         } else {
             shooterStatus = true;
-            double targetRPM = 4050; 
+            double targetRPM = 3400; 
             shooterMotor1.getClosedLoopController().setReference(targetRPM, ControlType.kVelocity);
             shooterMotor2.getClosedLoopController().setReference(targetRPM, ControlType.kVelocity);
+            shooterMotor3.getClosedLoopController().setReference(targetRPM, ControlType.kVelocity);
+            shooterMotor4.getClosedLoopController().setReference(targetRPM, ControlType.kVelocity);
         }
         }));
 
         joystick.povUp().onTrue(new RunCommand(()->SmartDashboard.putNumber("Shooter1Rpm", shooterMotor1.getEncoder().getVelocity())));
-        
+        joystick.povRight().onTrue(Commands.runOnce(()->{kTargetPose = drivetrain.getState().Pose;},drivetrain));
+        joystick.povDown().onTrue(
+            Commands.either(
+                Commands.runOnce(() -> drivingToPose = false), 
+                driveToPoseCommand(), 
+                () -> drivingToPose
+            )
+        );
+
         joystick.rightStick().onTrue(Commands.runOnce(() -> snap = !snap));
 
         // Run SysId routines when holding back/start and X/Y.
@@ -156,6 +179,47 @@ public class RobotContainer {
         // joystick.leftBumper().onTrue(drivetrain.runOnce(drivetrain::seedFieldCentric));
 
         drivetrain.registerTelemetry(logger::telemeterize);
+    }
+
+        public Command driveToPoseCommand() {
+        return drivetrain.applyRequest(() -> {
+            Pose2d currentPose = drivetrain.getState().Pose;
+
+            double xError = kTargetPose.getX() - currentPose.getX();
+            double yError = kTargetPose.getY() - currentPose.getY();
+            
+            double angleError = edu.wpi.first.math.MathUtil.inputModulus(
+                kTargetPose.getRotation().getRadians() - currentPose.getRotation().getRadians(),
+                -Math.PI, 
+                Math.PI
+            );
+
+            double xVel = xError * kP_Translation;
+            double yVel = yError * kP_Translation;
+            double rotVel = angleError * kP_Rotation;
+
+            if(xVel > 0) xVel = Math.min(xVel, MaxSpeed);
+            else xVel = Math.max(xVel, -MaxSpeed);
+
+            if(yVel > 0) yVel = Math.min(yVel, MaxSpeed);
+            else yVel = Math.max(yVel, -MaxSpeed);
+            
+            if(rotVel > 0) rotVel = Math.min(rotVel, MaxAngularRate);
+            else rotVel = Math.max(rotVel, -MaxAngularRate);
+
+            return drive.withVelocityX(xVel)
+                        .withVelocityY(yVel)
+                        .withRotationalRate(rotVel);
+        })
+        .beforeStarting(() -> drivingToPose = true)
+        .until(() -> {
+            Pose2d currentPose = drivetrain.getState().Pose;
+            double dist = currentPose.getTranslation().getDistance(kTargetPose.getTranslation());
+            double degError = Math.abs(currentPose.getRotation().minus(kTargetPose.getRotation()).getDegrees());
+            
+            return dist < 0.05 && degError < 2.0;
+        })
+        .finallyDo((interrupted) -> drivingToPose = false); 
     }
 
     public Command getAutonomousCommand() {
