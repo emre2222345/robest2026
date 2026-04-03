@@ -8,6 +8,8 @@ import static edu.wpi.first.units.Units.*;
 
 import com.ctre.phoenix6.swerve.SwerveModule.DriveRequestType;
 import com.ctre.phoenix6.hardware.TalonFX;
+import com.ctre.phoenix6.signals.InvertedValue;
+import com.ctre.phoenix6.signals.NeutralModeValue;
 import com.ctre.phoenix6.swerve.SwerveRequest;
 
 import com.revrobotics.spark.SparkLowLevel;
@@ -15,26 +17,29 @@ import com.revrobotics.spark.SparkMax;
 
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
-import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
+//import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.Commands;
-import edu.wpi.first.wpilibj2.command.RunCommand;
+//import edu.wpi.first.wpilibj2.command.RunCommand;
 import edu.wpi.first.wpilibj2.command.button.CommandXboxController;
 import edu.wpi.first.wpilibj2.command.button.RobotModeTriggers;
 
 import frc.robot.generated.TunerConstants;
 import frc.robot.subsystems.CommandSwerveDrivetrain;
-import pabeles.concurrency.IntOperatorTask.Max;
+//import pabeles.concurrency.IntOperatorTask.Max;
 
-import com.revrobotics.spark.config.SparkMaxConfig;
-import com.revrobotics.spark.config.ClosedLoopConfig;
-import com.revrobotics.spark.SparkBase.ResetMode;
-import com.revrobotics.spark.SparkBase.ControlType;
-import com.revrobotics.spark.SparkBase.PersistMode;
+//import com.revrobotics.spark.config.SparkMaxConfig;
+//import com.revrobotics.spark.config.ClosedLoopConfig;
+//import com.revrobotics.spark.SparkBase.ResetMode;
+//import com.revrobotics.spark.SparkBase.ControlType;
+//import com.revrobotics.spark.SparkBase.PersistMode;
+//import com.revrobotics.spark.config.SparkBaseConfig.IdleMode;
+
+import com.ctre.phoenix6.controls.VelocityVoltage;
 
 import com.pathplanner.lib.path.PathPlannerPath;
 import com.pathplanner.lib.auto.AutoBuilder;
-import com.pathplanner.lib.path.PathConstraints;
+//import com.pathplanner.lib.path.PathConstraints;
 import edu.wpi.first.wpilibj2.command.SequentialCommandGroup;
 
 
@@ -42,19 +47,18 @@ public class RobotContainer {
     public boolean intakeStatus = false;
     public boolean shooterStatus = false;
     private SparkMax intakeMotor  = new SparkMax(30, SparkLowLevel.MotorType.kBrushless);
-    private SparkMax shooterMotor1  = new SparkMax(31, SparkLowLevel.MotorType.kBrushless);
-    private SparkMax shooterMotor2  = new SparkMax(32, SparkLowLevel.MotorType.kBrushless);
-    private SparkMax shooterMotor3  = new SparkMax(33, SparkLowLevel.MotorType.kBrushless);
-    private SparkMax shooterMotor4  = new SparkMax(34, SparkLowLevel.MotorType.kBrushless);
-    private SparkMaxConfig shooterConfig = new SparkMaxConfig();
+    private TalonFX shooterMotor1 = new TalonFX(31);
+    private TalonFX shooterMotor2 = new TalonFX(32);
 
     private final double kP_Translation = 1.5; 
     private final double kP_Rotation = 1.5;
     private Pose2d kTargetPose = new Pose2d(0.0, 0.0, Rotation2d.fromDegrees(0));
     private boolean drivingToPose = false;
 
-    private double MaxSpeed = 0.2 * TunerConstants.kSpeedAt12Volts.in(MetersPerSecond); // kSpeedAt12Volts desired top speed
+    private double MaxSpeed = 0.5 * TunerConstants.kSpeedAt12Volts.in(MetersPerSecond); // kSpeedAt12Volts desired top speed
     private double MaxAngularRate = RotationsPerSecond.of(0.75).in(RadiansPerSecond); // 3/4 of a rotation per second max angular velocity
+    private boolean slowMode = false;
+    private double hizCarpan = 1;
 
     private boolean snap = false; // snaps to 45 degree angles
 
@@ -77,44 +81,33 @@ public class RobotContainer {
     public final CommandSwerveDrivetrain drivetrain = TunerConstants.createDrivetrain();
 
     public RobotContainer() {
-        ClosedLoopConfig pid = shooterConfig.closedLoop;
-        pid.p(0.00032);
-        pid.i(0);
-        pid.d(0.000032);
-        pid.velocityFF(0.00017);
+        var pid = new com.ctre.phoenix6.configs.TalonFXConfiguration();
+        pid.Slot0.kP = 0.00032;
+        pid.Slot0.kI = 0.0;
+        pid.Slot0.kD = 0.000032;
+        pid.Slot0.kV = 0.00017;
 
-        shooterConfig.smartCurrentLimit(35);
+        pid.CurrentLimits.SupplyCurrentLimit = 35;
+        pid.CurrentLimits.SupplyCurrentLimitEnable = true;
+        pid.MotorOutput.NeutralMode = NeutralModeValue.Coast;
 
-        shooterConfig.inverted(true);
-        shooterMotor1.configure(shooterConfig, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
-        shooterMotor4.configure(shooterConfig, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
-
-        shooterConfig.inverted(false);
-        shooterMotor2.configure(shooterConfig, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
-        shooterMotor3.configure(shooterConfig, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
-
+        pid.MotorOutput.Inverted = InvertedValue.CounterClockwise_Positive;
+        shooterMotor1.getConfigurator().apply(pid);
+        
+        pid.MotorOutput.Inverted = InvertedValue.Clockwise_Positive;
+        shooterMotor2.getConfigurator().apply(pid);
+        
         configureBindings();
     }
 
     private void configureBindings() {
         // Note that X is defined as forward according to WPILib convention,
         // and Y is defined as to the left according to WPILib convention.
-            drivetrain.setDefaultCommand(
-                drivetrain.applyRequest(() -> {
-                    var x = joystick.getRightX();
-                    var y = joystick.getRightY();
-                    if(Math.abs(x) > 0.4 || Math.abs(y) > 0.4) {
-                        var rotation = new Rotation2d(-y, -x);
-                        if(snap) rotation = new Rotation2d(Math.toRadians(Math.round(rotation.getDegrees() / 45.0) * 45));
-                        return driveFacing.withVelocityX(-joystick.getLeftY() * MaxSpeed)
-                                .withVelocityY(-joystick.getLeftX() * MaxSpeed)
-                                .withTargetDirection(rotation);
-                    } else {
-                        return drive.withVelocityX(-joystick.getLeftY() * MaxSpeed)
-                                .withVelocityY(-joystick.getLeftX() * MaxSpeed)
-                                .withRotationalRate(0);
-                    }
-                }
+        drivetrain.setDefaultCommand(
+            drivetrain.applyRequest(() ->
+                drive.withVelocityX(-joystick.getLeftY() * MaxSpeed * hizCarpan) // Drive forward with negative Y (forward)
+                    .withVelocityY(-joystick.getLeftX() * MaxSpeed *hizCarpan) // Drive left with negative X (left)
+                    .withRotationalRate(-joystick.getRightX() * MaxAngularRate *hizCarpan) // Drive counterclockwise with negative X (left)
             ).unless(() -> drivingToPose)
         );
 
@@ -142,29 +135,34 @@ public class RobotContainer {
         joystick.x().onTrue(Commands.runOnce(() -> {
         if (shooterStatus) {
             shooterStatus = false;
-            shooterMotor1.getClosedLoopController().setReference(0, ControlType.kVelocity);
-            shooterMotor2.getClosedLoopController().setReference(0, ControlType.kVelocity);
-            shooterMotor3.getClosedLoopController().setReference(0, ControlType.kVelocity);
-            shooterMotor4.getClosedLoopController().setReference(0, ControlType.kVelocity);
+            shooterMotor1.set(0);
+            shooterMotor2.set(0);
         } else {
             shooterStatus = true;
-            double targetRPM = 3400; 
-            shooterMotor1.getClosedLoopController().setReference(targetRPM, ControlType.kVelocity);
-            shooterMotor2.getClosedLoopController().setReference(targetRPM, ControlType.kVelocity);
-            shooterMotor3.getClosedLoopController().setReference(targetRPM, ControlType.kVelocity);
-            shooterMotor4.getClosedLoopController().setReference(targetRPM, ControlType.kVelocity);
+            double targetRPS = (3400.0/60.0); 
+            shooterMotor1.setControl(new VelocityVoltage(targetRPS));
+            shooterMotor2.setControl(new VelocityVoltage(targetRPS));
+
         }
         }));
 
-        joystick.povUp().onTrue(new RunCommand(()->SmartDashboard.putNumber("Shooter1Rpm", shooterMotor1.getEncoder().getVelocity())));
+        //joystick.povUp().onTrue(new RunCommand(()->SmartDashboard.putNumber("Shooter1Rpm", shooterMotor1.getEncoder().getVelocity())));
+        joystick.povUp().onTrue(Commands.runOnce(()->{
+            if(!slowMode){
+                hizCarpan = 0.4;
+                slowMode = true;
+            }
+            else{
+                hizCarpan = 1;
+                slowMode = false;
+            }
+        }));
         joystick.povRight().onTrue(Commands.runOnce(()->{kTargetPose = drivetrain.getState().Pose;},drivetrain));
-        joystick.povDown().onTrue(
-            Commands.either(
-                Commands.runOnce(() -> drivingToPose = false), 
-                driveToPoseCommand(), 
-                () -> drivingToPose
-            )
-        );
+        joystick.povDown().onTrue(Commands.runOnce(() ->{
+            if(drivingToPose)  drivingToPose = false;   
+            else driveToPoseCommand().schedule();
+        }));
+        joystick.povLeft().onTrue(Commands.runOnce(() -> drivetrain.resetPose(new Pose2d(0, 0, new Rotation2d()))));
 
         joystick.rightStick().onTrue(Commands.runOnce(() -> snap = !snap));
 
@@ -217,7 +215,7 @@ public class RobotContainer {
             double dist = currentPose.getTranslation().getDistance(kTargetPose.getTranslation());
             double degError = Math.abs(currentPose.getRotation().minus(kTargetPose.getRotation()).getDegrees());
             
-            return dist < 0.05 && degError < 2.0;
+            return dist < 0.05 && degError < 2.0 && drivingToPose;
         })
         .finallyDo((interrupted) -> drivingToPose = false); 
     }
