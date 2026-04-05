@@ -20,6 +20,7 @@ import edu.wpi.first.math.geometry.Rotation2d;
 //import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.Commands;
+import edu.wpi.first.wpilibj2.command.InstantCommand;
 //import edu.wpi.first.wpilibj2.command.RunCommand;
 import edu.wpi.first.wpilibj2.command.button.CommandXboxController;
 import edu.wpi.first.wpilibj2.command.button.RobotModeTriggers;
@@ -46,9 +47,11 @@ import edu.wpi.first.wpilibj2.command.SequentialCommandGroup;
 public class RobotContainer {
     public boolean intakeStatus = false;
     public boolean shooterStatus = false;
-    private SparkMax intakeMotor  = new SparkMax(30, SparkLowLevel.MotorType.kBrushless);
+    //private SparkMax intakeMotor  = new SparkMax(30, SparkLowLevel.MotorType.kBrushless);
     private TalonFX shooterMotor1 = new TalonFX(31);
     private TalonFX shooterMotor2 = new TalonFX(32);
+    private TalonFX shooterFeeder = new TalonFX(33);
+
 
     private final double kP_Translation = 1.5; 
     private final double kP_Rotation = 1.5;
@@ -80,12 +83,16 @@ public class RobotContainer {
 
     public final CommandSwerveDrivetrain drivetrain = TunerConstants.createDrivetrain();
 
+    private final VelocityVoltage m_motorVelocityVoltage1 = new VelocityVoltage(0);
+    private final VelocityVoltage m_motorVelocityVoltage2 = new VelocityVoltage(0);
+
+
     public RobotContainer() {
         var pid = new com.ctre.phoenix6.configs.TalonFXConfiguration();
-        pid.Slot0.kP = 0.00032;
-        pid.Slot0.kI = 0.0;
-        pid.Slot0.kD = 0.000032;
-        pid.Slot0.kV = 0.00017;
+        //pid.Slot0.kP = 0.00032;
+        //pid.Slot0.kI = 0.0;
+        //pid.Slot0.kD = 0.000032;
+        //pid.Slot0.kV = 0.00017;
 
         pid.CurrentLimits.SupplyCurrentLimit = 35;
         pid.CurrentLimits.SupplyCurrentLimitEnable = true;
@@ -93,6 +100,7 @@ public class RobotContainer {
 
         pid.MotorOutput.Inverted = InvertedValue.CounterClockwise_Positive;
         shooterMotor1.getConfigurator().apply(pid);
+        shooterFeeder.getConfigurator().apply(pid);
         
         pid.MotorOutput.Inverted = InvertedValue.Clockwise_Positive;
         shooterMotor2.getConfigurator().apply(pid);
@@ -125,24 +133,25 @@ public class RobotContainer {
         joystick.y().onTrue(Commands.runOnce(() -> {
             if (intakeStatus) {
                 intakeStatus = false;
-                intakeMotor.set(0.0);
+                //intakeMotor.set(0.0);
             } else {
                 intakeStatus = true;
-                intakeMotor.set(1.0);
+                //intakeMotor.set(1.0);
             }
         }));
 
-        joystick.x().onTrue(Commands.runOnce(() -> {
+        joystick.x().onTrue(new InstantCommand(() -> {
         if (shooterStatus) {
             shooterStatus = false;
             shooterMotor1.set(0);
             shooterMotor2.set(0);
+            shooterFeeder.set(0);
         } else {
             shooterStatus = true;
-            double targetRPS = (3400.0/60.0); 
-            shooterMotor1.setControl(new VelocityVoltage(targetRPS));
-            shooterMotor2.setControl(new VelocityVoltage(targetRPS));
-
+            double targetRPS = ((double)200.0/60.0); 
+            shooterMotor1.setControl(m_motorVelocityVoltage1.withVelocity(targetRPS));
+            shooterMotor2.setControl(m_motorVelocityVoltage2.withVelocity(targetRPS));
+            Shootla(targetRPS).schedule();
         }
         }));
 
@@ -215,9 +224,17 @@ public class RobotContainer {
             double dist = currentPose.getTranslation().getDistance(kTargetPose.getTranslation());
             double degError = Math.abs(currentPose.getRotation().minus(kTargetPose.getRotation()).getDegrees());
             
-            return dist < 0.05 && degError < 2.0 && drivingToPose;
+            return !drivingToPose || (dist < 0.05 && degError < 2.0);
         })
         .finallyDo((interrupted) -> drivingToPose = false); 
+    }
+
+    public Command Shootla(double targetRPS) {
+    return Commands.run(() -> {
+        if(shooterMotor1.getVelocity().getValueAsDouble() >= targetRPS * 0.9){
+            shooterFeeder.set(0.6);
+        }
+    }).until(() -> !shooterStatus);
     }
 
     public Command getAutonomousCommand() {
