@@ -12,15 +12,15 @@ import com.ctre.phoenix6.signals.InvertedValue;
 import com.ctre.phoenix6.signals.NeutralModeValue;
 import com.ctre.phoenix6.swerve.SwerveRequest;
 
-import com.revrobotics.spark.SparkLowLevel;
-import com.revrobotics.spark.SparkMax;
+//import com.revrobotics.spark.SparkLowLevel;
+//import com.revrobotics.spark.SparkMax;
 
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
 //import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.Commands;
-import edu.wpi.first.wpilibj2.command.InstantCommand;
+//import edu.wpi.first.wpilibj2.command.InstantCommand;
 //import edu.wpi.first.wpilibj2.command.RunCommand;
 import edu.wpi.first.wpilibj2.command.button.CommandXboxController;
 import edu.wpi.first.wpilibj2.command.button.RobotModeTriggers;
@@ -28,6 +28,20 @@ import edu.wpi.first.wpilibj2.command.button.RobotModeTriggers;
 import frc.robot.generated.TunerConstants;
 import frc.robot.subsystems.CommandSwerveDrivetrain;
 //import pabeles.concurrency.IntOperatorTask.Max;
+//import static edu.wpi.first.units.Units.*;
+
+//import com.ctre.phoenix6.CANBus;
+//import com.ctre.phoenix6.StatusCode;
+//import com.ctre.phoenix6.configs.TalonFXConfiguration;
+//import com.ctre.phoenix6.controls.Follower;
+//import com.ctre.phoenix6.controls.NeutralOut;
+//import com.ctre.phoenix6.controls.VelocityTorqueCurrentFOC;
+import com.ctre.phoenix6.controls.VelocityVoltage;
+//import com.ctre.phoenix6.hardware.TalonFX;
+//import com.ctre.phoenix6.signals.MotorAlignmentValue;
+
+//import edu.wpi.first.wpilibj.TimedRobot;
+//import edu.wpi.first.wpilibj.XboxController;
 
 //import com.revrobotics.spark.config.SparkMaxConfig;
 //import com.revrobotics.spark.config.ClosedLoopConfig;
@@ -36,21 +50,25 @@ import frc.robot.subsystems.CommandSwerveDrivetrain;
 //import com.revrobotics.spark.SparkBase.PersistMode;
 //import com.revrobotics.spark.config.SparkBaseConfig.IdleMode;
 
-import com.ctre.phoenix6.controls.VelocityVoltage;
+//import com.ctre.phoenix6.controls.VelocityVoltage;
 
-import com.pathplanner.lib.path.PathPlannerPath;
-import com.pathplanner.lib.auto.AutoBuilder;
+//import com.pathplanner.lib.path.PathPlannerPath;
+//import com.pathplanner.lib.auto.AutoBuilder;
 //import com.pathplanner.lib.path.PathConstraints;
-import edu.wpi.first.wpilibj2.command.SequentialCommandGroup;
+//import edu.wpi.first.wpilibj2.command.SequentialCommandGroup;
 
 
 public class RobotContainer {
     public boolean intakeStatus = false;
     public boolean shooterStatus = false;
-    //private SparkMax intakeMotor  = new SparkMax(30, SparkLowLevel.MotorType.kBrushless);
+    public boolean rpmayar = true;
+    private Command ShootlaCopy;
+    private TalonFX intakeMotor = new TalonFX(30);
     private TalonFX shooterMotor1 = new TalonFX(31);
     private TalonFX shooterMotor2 = new TalonFX(32);
     private TalonFX shooterFeeder = new TalonFX(33);
+    private TalonFX FeederMotor1 = new TalonFX(34);
+    private TalonFX FeederMotor2 = new TalonFX(35);
 
 
     private final double kP_Translation = 1.5; 
@@ -63,7 +81,7 @@ public class RobotContainer {
     private boolean slowMode = false;
     private double hizCarpan = 1;
 
-    private boolean snap = false; // snaps to 45 degree angles
+    //private boolean snap = false; // snaps to 45 degree angles
 
     /* Setting up bindings for necessary control of the swerve drive platform */
     private final SwerveRequest.FieldCentric drive = new SwerveRequest.FieldCentric()
@@ -84,28 +102,34 @@ public class RobotContainer {
     public final CommandSwerveDrivetrain drivetrain = TunerConstants.createDrivetrain();
 
     private final VelocityVoltage m_motorVelocityVoltage1 = new VelocityVoltage(0);
-    private final VelocityVoltage m_motorVelocityVoltage2 = new VelocityVoltage(0);
-
 
     public RobotContainer() {
-        var pid = new com.ctre.phoenix6.configs.TalonFXConfiguration();
-        //pid.Slot0.kP = 0.00032;
-        //pid.Slot0.kI = 0.0;
-        //pid.Slot0.kD = 0.000032;
-        //pid.Slot0.kV = 0.00017;
-
-        pid.CurrentLimits.SupplyCurrentLimit = 35;
-        pid.CurrentLimits.SupplyCurrentLimitEnable = true;
-        pid.MotorOutput.NeutralMode = NeutralModeValue.Coast;
-
-        pid.MotorOutput.Inverted = InvertedValue.CounterClockwise_Positive;
-        shooterMotor1.getConfigurator().apply(pid);
-        shooterFeeder.getConfigurator().apply(pid);
+        var pidmain = new com.ctre.phoenix6.configs.TalonFXConfiguration();
+        var pidfeedermain = new com.ctre.phoenix6.configs.TalonFXConfiguration();
+        pidmain.Slot0.kP = 0.75;
+        pidfeedermain.Slot0.kP = 0.75;
         
-        pid.MotorOutput.Inverted = InvertedValue.Clockwise_Positive;
-        shooterMotor2.getConfigurator().apply(pid);
+        pidfeedermain.CurrentLimits.SupplyCurrentLimit = 35;
+        pidfeedermain.CurrentLimits.SupplyCurrentLimitEnable = true;
+        pidfeedermain.MotorOutput.NeutralMode = NeutralModeValue.Coast;
+
+        pidmain.CurrentLimits.SupplyCurrentLimit = 35;
+        pidmain.CurrentLimits.SupplyCurrentLimitEnable = true;
+        pidmain.MotorOutput.NeutralMode = NeutralModeValue.Coast;
         
-        configureBindings();
+        pidmain.MotorOutput.Inverted = InvertedValue.CounterClockwise_Positive;
+        shooterMotor1.getConfigurator().apply(pidmain);
+        shooterFeeder.getConfigurator().apply(pidmain);
+
+        pidfeedermain.MotorOutput.Inverted = InvertedValue.Clockwise_Positive;
+        FeederMotor1.getConfigurator().apply(pidfeedermain);
+
+        pidmain.MotorOutput.Inverted = InvertedValue.Clockwise_Positive;
+        shooterMotor2.getConfigurator().apply(pidmain);        
+
+        pidfeedermain.MotorOutput.Inverted = InvertedValue.CounterClockwise_Positive;
+        FeederMotor2.getConfigurator().apply(pidfeedermain);        
+        configureBindings(); 
     }
 
     private void configureBindings() {
@@ -127,31 +151,33 @@ public class RobotContainer {
         );
 
         joystick.a().whileTrue(drivetrain.applyRequest(() -> brake));
-        joystick.b().whileTrue(drivetrain.applyRequest(() ->
+        /*joystick.b().whileTrue(drivetrain.applyRequest(() ->
                 point.withModuleDirection(new Rotation2d(-joystick.getLeftY(), -joystick.getLeftX()))
-        ));
+        ));*/
         joystick.y().onTrue(Commands.runOnce(() -> {
             if (intakeStatus) {
                 intakeStatus = false;
-                //intakeMotor.set(0.0);
+                intakeMotor.set(0.0);
             } else {
                 intakeStatus = true;
-                //intakeMotor.set(1.0);
+                intakeMotor.set(1.0);
             }
         }));
 
-        joystick.x().onTrue(new InstantCommand(() -> {
+        joystick.x().onTrue(Commands.runOnce(() -> {
         if (shooterStatus) {
             shooterStatus = false;
+            if(ShootlaCopy != null) ShootlaCopy.cancel();
+            shooterFeeder.set(0);
             shooterMotor1.set(0);
             shooterMotor2.set(0);
-            shooterFeeder.set(0);
+            FeederMotor1.set(0);
+            FeederMotor2.set(0);
         } else {
             shooterStatus = true;
-            double targetRPS = ((double)200.0/60.0); 
-            shooterMotor1.setControl(m_motorVelocityVoltage1.withVelocity(targetRPS));
-            shooterMotor2.setControl(m_motorVelocityVoltage2.withVelocity(targetRPS));
-            Shootla(targetRPS).schedule();
+            double targetRPS = ((double)50.0); 
+            ShootlaCopy = Shootla(targetRPS);
+            ShootlaCopy.schedule();
         }
         }));
 
@@ -171,9 +197,10 @@ public class RobotContainer {
             if(drivingToPose)  drivingToPose = false;   
             else driveToPoseCommand().schedule();
         }));
-        joystick.povLeft().onTrue(Commands.runOnce(() -> drivetrain.resetPose(new Pose2d(0, 0, new Rotation2d()))));
+        joystick.povLeft().onTrue(Commands.runOnce(() -> drivetrain.resetPose(new Pose2d(0, 0, drivetrain.getState().Pose.getRotation()))));
 
-        joystick.rightStick().onTrue(Commands.runOnce(() -> snap = !snap));
+        //joystick.rightStick().onTrue(Commands.runOnce(() -> snap = !snap));
+        joystick.rightStick().onTrue(Commands.runOnce(() -> rpmayar = !rpmayar));
 
         // Run SysId routines when holding back/start and X/Y.
         // Note that each routine should be run exactly once in a single log.
@@ -224,32 +251,31 @@ public class RobotContainer {
             double dist = currentPose.getTranslation().getDistance(kTargetPose.getTranslation());
             double degError = Math.abs(currentPose.getRotation().minus(kTargetPose.getRotation()).getDegrees());
             
-            return !drivingToPose || (dist < 0.05 && degError < 2.0);
+            return (!drivingToPose || (dist < 0.05 && degError < 2.0));
         })
         .finallyDo((interrupted) -> drivingToPose = false); 
     }
 
     public Command Shootla(double targetRPS) {
     return Commands.run(() -> {
-        if(shooterMotor1.getVelocity().getValueAsDouble() >= targetRPS * 0.9){
-            shooterFeeder.set(0.6);
+        shooterMotor1.setControl(m_motorVelocityVoltage1.withVelocity(targetRPS));
+        shooterMotor2.setControl(m_motorVelocityVoltage1.withVelocity(targetRPS));
+        if(shooterMotor1.getVelocity().getValueAsDouble() >= targetRPS * 0.85 && shooterStatus){
+            shooterFeeder.set(0.3);
+            FeederMotor1.set(0.3);
+            FeederMotor2.set(0.3);
+        }
+        else if (!shooterStatus){
+            shooterFeeder.set(0);
+            FeederMotor1.set(0);
+            FeederMotor2.set(0);
         }
     }).until(() -> !shooterStatus);
     }
 
     public Command getAutonomousCommand() {
-    Command seedHeading = drivetrain.runOnce(() -> drivetrain.seedFieldCentric(new Rotation2d()));
-    try {
-        PathPlannerPath path = PathPlannerPath.fromPathFile("Example Path");
-        Command pathCommand = AutoBuilder.followPath(path);
-        return new SequentialCommandGroup(
-            seedHeading,
-            pathCommand
-        );
-    } catch (Exception e) {
-        return seedHeading;
+        return Commands.none();
     }
-}
 
 
 }
