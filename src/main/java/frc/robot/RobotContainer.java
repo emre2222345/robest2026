@@ -213,7 +213,23 @@ public class RobotContainer {
             if(drivingToPose)  drivingToPose = false;   
             else driveToPoseCommand().schedule();
         }));
-        joystick.povLeft().onTrue(Commands.runOnce(() -> drivetrain.resetPose(new Pose2d(0, 0, drivetrain.getState().Pose.getRotation()))));
+
+        joystick.povLeft().onTrue(Commands.runOnce(() -> {
+            LimelightHelpers.SetRobotOrientation("limelight",
+                drivetrain.getState().Pose.getRotation().getDegrees(), 0, 0, 0, 0, 0);
+            LimelightHelpers.PoseEstimate mt2 =
+                LimelightHelpers.getBotPoseEstimate_wpiBlue_MegaTag2("limelight");
+
+            if (mt2 != null && mt2.tagCount > 0) {
+                drivetrain.resetPose(mt2.pose);
+                System.out.printf(
+                    "[Limelight] Pose RESET (MT2) -> X: %.2f m, Y: %.2f m, Yaw: %.2f°%n",
+                    mt2.pose.getX(), mt2.pose.getY(), mt2.pose.getRotation().getDegrees()
+                );
+            } else {
+                System.out.println("Tag Error.");
+            }
+        }));
 
         drivetrain.registerTelemetry((state) -> {
             logger.telemeterize(state);
