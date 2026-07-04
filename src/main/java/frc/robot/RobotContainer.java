@@ -208,6 +208,7 @@ public class RobotContainer {
         }));
 
         //joystick.povUp().onTrue(new RunCommand(()->SmartDashboard.putNumber("Shooter1Rpm", shooterMotor1.getEncoder().getVelocity())));
+        joystick.povUp().onTrue(Commands.runOnce(() -> {System.out.printf("[Arm] -> %.2f derece%n", armMotor.getEncoder().getPosition());}));
         joystick.povRight().onTrue(Commands.runOnce(()->{kTargetPose = drivetrain.getState().Pose;},drivetrain));
         joystick.povDown().onTrue(Commands.runOnce(() ->{
             if(drivingToPose)  drivingToPose = false;   
