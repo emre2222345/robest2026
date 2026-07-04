@@ -135,7 +135,6 @@ public class RobotContainer {
         FeederMotor.configure(config, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
 
         SparkMaxConfig armConfig = new SparkMaxConfig();
-
         armConfig.smartCurrentLimit(40);
         armConfig.idleMode(IdleMode.kBrake);
         armConfig.inverted(false);
