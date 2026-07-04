@@ -62,6 +62,8 @@ public class RobotContainer {
     public boolean intakeStatus = false;
     public boolean shooterStatus = false;
     public boolean rpmayar = true;
+    private double reverse = 1;
+    private double targetRPS = 60;;
     private Command ShootlaCopy;
     private TalonFX intakeMotor = new TalonFX(30);
     private TalonFX shooterMotor1 = new TalonFX(31);
@@ -150,7 +152,7 @@ public class RobotContainer {
                 drivetrain.applyRequest(() -> idle).ignoringDisable(true)
         );
 
-        joystick.a().whileTrue(drivetrain.applyRequest(() -> brake));
+        joystick.b().onTrue(Commands.runOnce(() -> reverse *= (-1)));;
         /*joystick.b().whileTrue(drivetrain.applyRequest(() ->
                 point.withModuleDirection(new Rotation2d(-joystick.getLeftY(), -joystick.getLeftX()))
         ));*/
@@ -160,11 +162,11 @@ public class RobotContainer {
                 intakeMotor.set(0.0);
             } else {
                 intakeStatus = true;
-                intakeMotor.set(1.0);
+                intakeMotor.set(0.7);
             }
         }));
 
-        joystick.x().onTrue(Commands.runOnce(() -> {
+        joystick.a().onTrue(Commands.runOnce(() -> {
         if (shooterStatus) {
             shooterStatus = false;
             if(ShootlaCopy != null) ShootlaCopy.cancel();
@@ -175,8 +177,8 @@ public class RobotContainer {
             FeederMotor2.set(0);
         } else {
             shooterStatus = true;
-            double targetRPS = ((double)50.0); 
-            ShootlaCopy = Shootla(targetRPS);
+            targetRPS = ((double)51.0); 
+            ShootlaCopy = Shootla(targetRPS, reverse);
             ShootlaCopy.schedule();
         }
         }));
@@ -200,7 +202,7 @@ public class RobotContainer {
         joystick.povLeft().onTrue(Commands.runOnce(() -> drivetrain.resetPose(new Pose2d(0, 0, drivetrain.getState().Pose.getRotation()))));
 
         //joystick.rightStick().onTrue(Commands.runOnce(() -> snap = !snap));
-        joystick.rightStick().onTrue(Commands.runOnce(() -> rpmayar = !rpmayar));
+        joystick.x().onTrue(Commands.runOnce(() -> rpmayar = !rpmayar));
 
         // Run SysId routines when holding back/start and X/Y.
         // Note that each routine should be run exactly once in a single log.
@@ -256,14 +258,14 @@ public class RobotContainer {
         .finallyDo((interrupted) -> drivingToPose = false); 
     }
 
-    public Command Shootla(double targetRPS) {
+    public Command Shootla(double targetRPS, double mode) {
     return Commands.run(() -> {
-        shooterMotor1.setControl(m_motorVelocityVoltage1.withVelocity(targetRPS));
-        shooterMotor2.setControl(m_motorVelocityVoltage1.withVelocity(targetRPS));
+        shooterMotor1.setControl(m_motorVelocityVoltage1.withVelocity(targetRPS * mode));
+        shooterMotor2.setControl(m_motorVelocityVoltage1.withVelocity(targetRPS * mode));
         if(shooterMotor1.getVelocity().getValueAsDouble() >= targetRPS * 0.85 && shooterStatus){
-            shooterFeeder.set(0.3);
-            FeederMotor1.set(0.3);
-            FeederMotor2.set(0.3);
+            shooterFeeder.set((0.3 * mode));
+            FeederMotor1.set((0.3 * mode));
+            FeederMotor2.set((0.3 * mode));
         }
         else if (!shooterStatus){
             shooterFeeder.set(0);
