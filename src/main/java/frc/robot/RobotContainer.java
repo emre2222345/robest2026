@@ -59,6 +59,7 @@ import com.ctre.phoenix6.controls.VelocityVoltage;
 
 import org.limelightvision.LimelightHelpers;
 import edu.wpi.first.wpilibj.Timer;
+import edu.wpi.first.math.VecBuilder;   
 
 public class RobotContainer {
     public boolean intakeStatus = false;
@@ -84,6 +85,7 @@ public class RobotContainer {
     private double MaxAngularRate = RotationsPerSecond.of(0.75).in(RadiansPerSecond); // 3/4 of a rotation per second max angular velocity
     private boolean slowMode = false;
     private double hizCarpan = 1;
+    private double lastPrintTime = 0.0;
 
     //private boolean snap = false; // snaps to 45 degree angles
 
@@ -216,17 +218,52 @@ public class RobotContainer {
         // Reset the field-centric heading on left bumper press.
         // joystick.leftBumper().onTrue(drivetrain.runOnce(drivetrain::seedFieldCentric));
 
-        drivetrain.registerTelemetry(state -> {
-            logger.telemeterize(state);
-            
-            if (LimelightHelpers.getTV("limelight")) {
-                Pose2d llPose = LimelightHelpers.getBotPose2d_wpiBlue("limelight");
-                double latency = (LimelightHelpers.getLatency_Capture("limelight") + LimelightHelpers.getLatency_Pipeline("limelight")) / 1000.0;
-                double timestamp = Timer.getFPGATimestamp() - latency;
-                
-                drivetrain.addVisionMeasurement(llPose, timestamp);
-            }
-        });
+        drivetrain.registerTelemetry((state) -> {
+    logger.telemeterize(state);
+
+    // Robotun şu anki yaw'ını Limelight'a gönder (MegaTag2 için şart)
+    LimelightHelpers.SetRobotOrientation(
+        "limelight",
+        state.Pose.getRotation().getDegrees(),
+        0, 0, 0, 0, 0
+    );
+
+    LimelightHelpers.PoseEstimate mt2 =
+        LimelightHelpers.getBotPoseEstimate_wpiBlue_MegaTag2("limelight");
+
+    boolean rejectUpdate = false;
+
+    // Çok hızlı dönerken vision güvenilmez, reddet
+    if (Math.abs(state.speeds.omegaRadiansPerSecond) > Math.toRadians(720)) {
+        rejectUpdate = true;
+    }
+    if (mt2 == null || mt2.tagCount == 0) {
+        rejectUpdate = true;
+    }
+
+    if (!rejectUpdate) {
+        double xyStdDev = 0.5 * (1.0 + mt2.avgTagDist * 0.1) / Math.max(1, mt2.tagCount);
+
+        drivetrain.setVisionMeasurementStdDevs(
+            VecBuilder.fill(xyStdDev, xyStdDev, 9999999)
+        );
+
+        drivetrain.addVisionMeasurement(mt2.pose, mt2.timestampSeconds);
+
+        double now = Timer.getFPGATimestamp();
+        if (now - lastPrintTime >= 1.0) {
+            lastPrintTime = now;
+            System.out.printf(
+                "[Limelight] Pose güncellendi -> X: %.2f m, Y: %.2f m, Yaw: %.2f°, TagCount: %d, AvgDist: %.2f m%n",
+                mt2.pose.getX(),
+                mt2.pose.getY(),
+                mt2.pose.getRotation().getDegrees(),
+                mt2.tagCount,
+                mt2.avgTagDist
+            );
+        }
+    }
+});
     }
 
         public Command driveToPoseCommand() {
