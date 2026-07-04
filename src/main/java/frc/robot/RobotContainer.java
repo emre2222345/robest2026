@@ -57,6 +57,8 @@ import com.ctre.phoenix6.controls.VelocityVoltage;
 //import com.pathplanner.lib.path.PathConstraints;
 //import edu.wpi.first.wpilibj2.command.SequentialCommandGroup;
 
+import org.limelightvision.LimelightHelpers;
+import edu.wpi.first.wpilibj.Timer;
 
 public class RobotContainer {
     public boolean intakeStatus = false;
@@ -71,7 +73,7 @@ public class RobotContainer {
     private TalonFX shooterFeeder = new TalonFX(33);
     private TalonFX FeederMotor1 = new TalonFX(34);
     private TalonFX FeederMotor2 = new TalonFX(35);
-
+    
 
     private final double kP_Translation = 1.5; 
     private final double kP_Rotation = 1.5;
@@ -214,7 +216,17 @@ public class RobotContainer {
         // Reset the field-centric heading on left bumper press.
         // joystick.leftBumper().onTrue(drivetrain.runOnce(drivetrain::seedFieldCentric));
 
-        drivetrain.registerTelemetry(logger::telemeterize);
+        drivetrain.registerTelemetry(state -> {
+            logger.telemeterize(state);
+            
+            if (LimelightHelpers.getTV("limelight")) {
+                Pose2d llPose = LimelightHelpers.getBotPose2d_wpiBlue("limelight");
+                double latency = (LimelightHelpers.getLatency_Capture("limelight") + LimelightHelpers.getLatency_Pipeline("limelight")) / 1000.0;
+                double timestamp = Timer.getFPGATimestamp() - latency;
+                
+                drivetrain.addVisionMeasurement(llPose, timestamp);
+            }
+        });
     }
 
         public Command driveToPoseCommand() {
