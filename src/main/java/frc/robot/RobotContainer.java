@@ -35,7 +35,7 @@ import frc.robot.subsystems.CommandSwerveDrivetrain;
 //import com.ctre.phoenix6.configs.TalonFXConfiguration;
 //import com.ctre.phoenix6.controls.Follower;
 //import com.ctre.phoenix6.controls.NeutralOut;
-import com.ctre.phoenix6.controls.VelocityTorqueCurrentFOC;
+//import com.ctre.phoenix6.controls.VelocityTorqueCurrentFOC;
 import com.ctre.phoenix6.controls.VelocityVoltage;
 //import com.ctre.phoenix6.hardware.TalonFX;
 //import com.ctre.phoenix6.signals.MotorAlignmentValue;
